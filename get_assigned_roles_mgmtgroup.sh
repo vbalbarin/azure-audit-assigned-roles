@@ -17,7 +17,7 @@ function acct_mg_cache() {
 }
 
 
-function mgmt_parent {
+function acct_mg_parent {
   local subscription_name="$1"
   local ret=''
   mgs=($(find . -type f -name "mgmt_subs_*.json" -exec basename {} \;))
@@ -60,7 +60,7 @@ else
   fi
 fi
 
-# echo $(mgmt_parent "${az_subscription}")
+# echo $(acct_mg_parent "${az_subscription}")
 # mgmt_file=$(find . -type f -name "mgmt_groups-*.json" -exec basename {} \;)
 az_management_group_ids=($( jq -r ".[] | .id" "${mgmt_file}"  ))
 
