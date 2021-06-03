@@ -13,7 +13,7 @@ function mgmt_cache() {
     az account management-group show --name "${mg}" --expand --query "{id: id, name: name, children: children[?type=='/subscriptions']}" > mgmt_subs_${mg}-${now}.json
   done
   # fn=$(find . -type f -name "mgmt_groups-*.json" -exec basename {} \;)
-  printf '%s' "${mgmt_cache}"
+  printf '%s' "${mg_cache}"
 }
 
 
