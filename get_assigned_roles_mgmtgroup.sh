@@ -1,5 +1,7 @@
 #! /env/bin/bash
 
+now=$(date +%s)
+
 function timestamp() {
   printf "%s" "$(date -u +'%Y-%d-%mT%H:%M:%SZ')"
 }
@@ -39,8 +41,6 @@ set -f
 
 az_subscription_json=$(az account show --query "{name: name, id:id, tenantId: tenantId}")
 az_subscription=$(echo ${az_subscription_json} | jq -r '.name')
-
-now=$(date +%s)
 
 mgmt_files=($(find . -type f -name "mgmt_groups-*.json" -exec basename {} \;))
 
