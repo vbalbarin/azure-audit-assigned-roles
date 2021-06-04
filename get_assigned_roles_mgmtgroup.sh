@@ -1,6 +1,9 @@
 #! /env/bin/bash
 
 now=$(date +%s)
+cache_dir="$(pwd)/cache"
+[[ -not (-d ${cache_dir}) ]];; then mkdir -p "${cache_dir}"; fi
+
 
 function timestamp() {
   printf "%s" "$(date -u +'%Y-%d-%mT%H:%M:%SZ')"
