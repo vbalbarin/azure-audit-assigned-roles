@@ -68,12 +68,69 @@ az_management_group_ids=($( jq -r ".[] | .id" "${mgmt_file}"  ))
 printf -- "%3s" | tr " " "-"; printf '\n'
 
 for i in ${az_management_group_ids[@]}; do
-az role assignment list  --scope "${i}"> acct_mg_assignments-.json
+mg_name=$(echo "${i}" | cut -d '/' -f 5)
+mg_assignments_fn="acct_mg_assignments_${mg_name}-${now}.json"
+az role assignment list  --scope "${i}"> "${mg_assignments_fn}"
 printf -- "-\n"
 printf -- "  timestamp: %s\n" $(timestamp)
 printf -- "  id: %s\n" ${i}
 printf -- "  tenant: %s\n" "$(echo ${az_subscription_json} | jq -r '.tenantId')"
-#printf -- "  assignments:\n"
+printf -- "  assignments:\n"
+
+az_assigned_rolenames=($(jq -r '[ .[] | .roleDefinitionName ] | unique | .[]' "${mg_assignments_fn}"))
+for r in "${az_assigned_rolenames[@]}"; do
+  printf -v q '[ .[] | select(.roleDefinitionName=="%s") ]' "${r}"
+  f="${r/\//-}" # substitute - for /
+  jq "${q}" "${mg_assignments_fn}" > "${f}.json"
+  az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${f}.json"))
+  az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${f}.json"))
+  az_ad_groups=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${f}.json"))
+
+  printf -- "  -\n"
+  printf -- "    role: %s\n" ${r}
+  printf -- "    users:"
+  if [[ ${#az_ad_users[@]} = 0 ]]; then
+  printf -- " []\n"
+  else
+  printf -- "\n"
+  for u in ${az_ad_users[@]}; do
+  printf -- "    - %s\n" ${u}
+  done
+  fi
+  printf -- "    service_principals:"
+  if [[ ${#az_ad_sps[@]} = 0 ]]; then
+  printf -- " []\n"
+  else
+  printf -- "\n"
+  for s in ${az_ad_sps[@]}; do
+  printf -- "    - %s\n" ${s}
+  done
+  fi
+  printf -- "    groups:"
+  if [[ ${#az_ad_groups[@]} = 0 ]]; then
+  printf -- " []\n"
+  else
+  printf -- "\n"
+  for g in ${az_ad_groups[@]}; do
+  printf -- "    -\n"
+  printf -- "      %s:" ${g}
+  members=($(az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '.[] | .userPrincipalName'))
+  if [[ ${#members[@]} = 0 ]]; then
+  printf -- " []\n"
+  else
+  printf -- "\n"
+  for m in ${members[@]}; do
+  printf -- "      - %s\n" "${m}"
+  done
+  fi
+  done
+  fi
+  # printf -- "\n"
+
+done
+
+
+
 done
 
 set +f
