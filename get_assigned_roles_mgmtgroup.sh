@@ -42,7 +42,7 @@ IFS=$'\n'
 set -f
 
 now=$(date +%s)
-# max_cache_age=1800 #s or 30min
+max_cache_age=1800 #s or 30min
 # max_cache_age=120 #s or 2min
 
 az_subscription_json=$(az account show --query "{name: name, id:id, tenantId: tenantId}")
@@ -68,10 +68,11 @@ else
     cache=$(acct_mg_cache "${new_cache}")
   else
     printf "Cache created %d m ago. Valid.\n" $(( ${age}/60 ))
-    cache="${account_caches[0]}" #pwd?
+    cache="$(pwd)/${account_caches[0]}"
   fi
 fi
 
+printf "Cache: %s\n" "${cache}"
 
 az_management_group_ids=($( jq -r ".[] | .id" "${cache}/management_groups.json"  ))
 exit
