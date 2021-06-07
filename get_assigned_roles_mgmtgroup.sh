@@ -17,6 +17,12 @@ function acct_mg_cache() {
       --expand \
       --query "{id: id, name: name, children: children[?type=='/subscriptions']}" > "${cache_dir}/subscriptions_${mg}.json"
   done
+  az_management_group_ids=($( jq -r ".[] | .id" "${cache_dir}/management_groups.json"  ))
+  # Role assignments
+  for i in ${az_management_group_ids[@]}; do
+    mg_name=$(echo "${i}" | cut -d '/' -f 5)
+    az role assignment list  --scope "${i}" > "${cache_dir}/assignments_${mg_name}.json"
+  done
   printf '%s' "${cache_dir}"
 }
 
@@ -81,7 +87,6 @@ printf -- "%3s" | tr " " "-"; printf '\n'
 for i in ${az_management_group_ids[@]}; do
 mg_name=$(echo "${i}" | cut -d '/' -f 5)
 mg_assignments_file="${cache}/assignments_${mg_name}.json"
-az role assignment list  --scope "${i}"> "${mg_assignments_file}"
 printf -- "-\n"
 printf -- "  timestamp: %s\n" $(timestamp)
 printf -- "  id: %s\n" ${i}
