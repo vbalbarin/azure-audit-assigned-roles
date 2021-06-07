@@ -1,25 +1,23 @@
 #! /env/bin/bash
 
-now=$(date +%s)
-cache_dir="$(pwd)/cache"
-[[ -not (-d ${cache_dir}) ]];; then mkdir -p "${cache_dir}"; fi
-
-
 function timestamp() {
   printf "%s" "$(date -u +'%Y-%d-%mT%H:%M:%SZ')"
 }
 
+
 function acct_mg_cache() {
-  local cache="$1"
-  az account management-group list > "${cache}"
-  az_management_groups=($( jq -r '.[] | .name' "${cache}"  ))
+  local cache_dir="$1"
+
+  [[ ! -d "${cache_dir}" ]] && mkdir -p "${cache_dir}"
+  az account management-group list > "${cache_dir}/management_groups.json"
+  az_management_groups=($( jq -r '.[] | .name' "${cache_dir}/management_groups.json"  ))
   for mg in ${az_management_groups[@]};do
     az account management-group show \
       --name "${mg}" \
       --expand \
-      --query "{id: id, name: name, children: children[?type=='/subscriptions']}" > "acct_mg_subs_${mg}-${now}.json"
+      --query "{id: id, name: name, children: children[?type=='/subscriptions']}" > "${cache_dir}/subscriptions_${mg}.json"
   done
-  printf '%s' "${cache}"
+  printf '%s' "${cache_dir}"
 }
 
 
@@ -43,30 +41,40 @@ function acct_mg_parent {
 IFS=$'\n'
 set -f
 
+now=$(date +%s)
+# max_cache_age=1800 #s or 30min
+# max_cache_age=120 #s or 2min
+
 az_subscription_json=$(az account show --query "{name: name, id:id, tenantId: tenantId}")
 az_subscription=$(echo ${az_subscription_json} | jq -r '.name')
 
-acct_mg_files=($(find . -type f -name "acct_mg_groups-*.json" -exec basename {} \;))
 
-if [[ $(( ${#acct_mg_files[@]} )) -ne 1 ]]; then
-  find . -type f -name "mgmt_*.json" -exec rm -f "{}" \;
-  mgmt_file=$(acct_mg_cache "acct_mg_groups-${now}.json")
+account_cache_name="account-cache-*"
+account_caches=($(find . -type dir -name "${account_cache_name}"  -exec basename {} \;))
+new_cache="$(pwd)/account-cache-${now}"
+
+if [[ $(( ${#account_caches[@]} )) -ne 1 ]]; then
+  printf "No valid cache found.\n"
+  find . -type d -name "${account_cache_name}" -exec rm -Rf "{}" \;
+  # mkdir -p "${new_cache}"
+  cache=$(acct_mg_cache "${new_cache}")
 else
-  crt=$( echo ${acct_mg_files[0]%%.*} | cut -d '-' -f 2)
+  printf "Found cache: %s\n" "${account_caches[0]}"
+  crt=$( echo ${account_caches[0]%%.*} | cut -d '-' -f 3)
   age=$(( ${now} - ${crt} ))
-  printf 'Cache created %d minutes ago.\n' $(( ${age}/60 ))
-  if [[ ${age} -gt 1800 ]]; then
-    printf 'Cache created %d minutes ago. Recreating...\n' $(( ${age}/60 ))
-    find . -type f -name "mgmt_*.json" -exec rm -f "{}" \;
-    mgmt_file=$(acct_mg_cache "acct_mg_groups-${now}.json")
+  if [[ ${age} -gt ${max_cache_age} ]]; then
+    printf 'Cache created %d minutes ago. Recreating expired cache...\n' $(( ${age}/60 ))
+    rm -Rf "${account_caches[0]}"
+    cache=$(acct_mg_cache "${new_cache}")
   else
-    mgmt_file=${acct_mg_files[0]}
+    printf "Cache created %d m ago. Valid.\n" $(( ${age}/60 ))
+    cache="${account_caches[0]}" #pwd?
   fi
 fi
 
-# echo $(acct_mg_parent "${az_subscription}")
-# acct_mg_file=$(find . -type f -name "acct_mg_groups-*.json" -exec basename {} \;)
-az_management_group_ids=($( jq -r ".[] | .id" "${mgmt_file}"  ))
+
+az_management_group_ids=($( jq -r ".[] | .id" "${cache}/management_groups.json"  ))
+exit
 
 printf -- "%3s" | tr " " "-"; printf '\n'
 
