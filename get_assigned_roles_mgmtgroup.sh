@@ -75,28 +75,28 @@ fi
 printf "Cache: %s\n" "${cache}"
 
 az_management_group_ids=($( jq -r ".[] | .id" "${cache}/management_groups.json"  ))
-exit
 
 printf -- "%3s" | tr " " "-"; printf '\n'
 
 for i in ${az_management_group_ids[@]}; do
 mg_name=$(echo "${i}" | cut -d '/' -f 5)
-mg_assignments_fn="acct_mg_assignments_${mg_name}-${now}.json"
-az role assignment list  --scope "${i}"> "${mg_assignments_fn}"
+mg_assignments_file="${cache}/assignments_${mg_name}.json"
+az role assignment list  --scope "${i}"> "${mg_assignments_file}"
 printf -- "-\n"
 printf -- "  timestamp: %s\n" $(timestamp)
 printf -- "  id: %s\n" ${i}
 printf -- "  tenant: %s\n" "$(echo ${az_subscription_json} | jq -r '.tenantId')"
 printf -- "  assignments:\n"
 
-az_assigned_rolenames=($(jq -r '[ .[] | .roleDefinitionName ] | unique | .[]' "${mg_assignments_fn}"))
+az_assigned_rolenames=($(jq -r '[ .[] | .roleDefinitionName ] | unique | .[]' "${mg_assignments_file}"))
 for r in "${az_assigned_rolenames[@]}"; do
   printf -v q '[ .[] | select(.roleDefinitionName=="%s") ]' "${r}"
   f="${r/\//-}" # substitute - for /
-  jq "${q}" "${mg_assignments_fn}" > "${f}.json"
-  az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${f}.json"))
-  az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${f}.json"))
-  az_ad_groups=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${f}.json"))
+  f="${cache}/role_${mg_name}_${f}.json"
+  jq "${q}" "${mg_assignments_file}" > "${f}"
+  az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${f}"))
+  az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${f}"))
+  az_ad_groups=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${f}"))
 
   printf -- "  -\n"
   printf -- "    role: %s\n" ${r}
@@ -141,11 +141,9 @@ for r in "${az_assigned_rolenames[@]}"; do
 
 done
 
-
-
 done
+
+printf -- "%3s" | tr " " "."; printf '\n'
 
 set +f
 unset IFS
-
-
