@@ -23,6 +23,11 @@ function acct_mg_cache() {
     mg_name=$(echo "${i}" | cut -d '/' -f 5)
     az role assignment list  --scope "${i}" > "${cache_dir}/assignments_${mg_name}.json"
   done
+  assignment_files=($( find "$(pwd)" -type f -name "assignments_*.json" ))
+  az_ad_groups=($( jq -r '[ .[] | select(.principalType=="Group") | .principalName ] | unique | .[]' "${assignment_files[@]}" ))
+  for g in ${az_ad_groups[@]}; do
+    az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '[ .[] | .userPrincipalName ]' > "${cache_dir}/ad_group_${g}.json"
+  done
   printf '%s' "${cache_dir}"
 }
 
@@ -131,7 +136,8 @@ for r in "${az_assigned_rolenames[@]}"; do
   for g in ${az_ad_groups[@]}; do
   printf -- "    -\n"
   printf -- "      %s:" ${g}
-  members=($(az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '.[] | .userPrincipalName'))
+  #members=($(az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '.[] | .userPrincipalName'))
+  members=($( jq -r ".[]" "${cache}/ad_group_${g}.json" ))
   if [[ ${#members[@]} = 0 ]]; then
   printf -- " []\n"
   else
