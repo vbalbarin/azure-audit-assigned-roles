@@ -4,26 +4,65 @@ function timestamp() {
   printf "%s" "$(date -u +'%Y-%d-%mT%H:%M:%SZ')"
 }
 
-rm *.json
+
+function acct_sub_cache() {
+  local cache_dir="$1"
+
+  [[ ! -d "${cache_dir}" ]] && mkdir -p "${cache_dir}"
+  # Role assignments
+  az role assignment list  > "${cache_dir}/assignments_subscription.json"
+  assignment_files=($( find "$(pwd)" -type f -name "assignments_*.json" ))
+  az_ad_groups=($( jq -r '[ .[] | select(.principalType=="Group") | .principalName ] | unique | .[]' "${assignment_files[@]}" ))
+  for g in ${az_ad_groups[@]}; do
+    az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '[ .[] | .userPrincipalName ]' > "${cache_dir}/ad_group_${g}.json"
+  done
+  printf '%s' "${cache_dir}"
+}
+
 
 IFS=$'\n'
 set -f
 
 az_subscription_json=$(az account show --query "{name: name, id:id, tenantId: tenantId}")
+subscription_name="$( echo ${az_subscription_json} | jq -r '.name')"
 
-az role assignment list  > assignments.json
+now=$(date +%s)
+max_cache_age=1800 #s or 30min
+# max_cache_age=120 #s or 2min
+
+cache_dir="subscription-${subscription_name}-cache-*"
+caches=($(find . -type dir -name "${cache_dir}"  -exec basename {} \;))
+new_cache_dir="$(pwd)/subscription-${subscription_name}-cache-${now}"
+
+if [[ $(( ${#caches[@]} )) -ne 1 ]]; then
+  printf "No valid cache found.\n"
+  find . -type d -name "${cache_dir}" -exec rm -Rf "{}" \;
+  # mkdir -p "${new_cache_dir}"
+  cache=$(acct_sub_cache "${new_cache_dir}")
+else
+  printf "Found cache: %s\n" "${caches[0]}"
+  crt=$( echo ${caches[0]%%.*} | cut -d '-' -f 3)
+  age=$(( ${now} - ${crt} ))
+  if [[ ${age} -gt ${max_cache_age} ]]; then
+    printf 'Cache created %d minutes ago. Recreating expired cache...\n' $(( ${age}/60 ))
+    rm -Rf "${caches[0]}"
+    cache=$(acct_sub_cache "${new_cache_dir}")
+  else
+    printf "Cache created %d m ago. Valid.\n" $(( ${age}/60 ))
+    cache="$(pwd)/${caches[0]}"
+  fi
+fi
+printf "Cache: %s\n" "${cache}"
+
 
 # explanation:
 #   (iterate over nodes | select roleDefinitionName property value); transform to a list | filter unique elements in list | transform list to indidual
 #  elements
 
-az_assigned_rolenames=($(jq -r '[ .[] | .roleDefinitionName ] | unique | .[]' assignments.json))
-
-az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' assignments.json))
-
-az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' assignments.json))
-
-az_ad_group=($(jq -r '.[] | select(.principalType=="Group") | .principalName' assignments.json))
+az_assigned_rolenames=($(jq -r '[ .[] | .roleDefinitionName ] | unique | .[]' "${cache}/assignments_subscription.json"))
+az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${cache}/assignments_subscription.json"))
+az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${cache}/assignments_subscription.json"))
+az_ad_group=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${cache}/assignments_subscription.json"))
 
 printf "%3s" | tr " " "-"; printf '\n'
 printf -- "-\n"
@@ -36,10 +75,11 @@ printf -- "  assignments:\n"
 for r in "${az_assigned_rolenames[@]}"; do
   printf -v q '[ .[] | select(.roleDefinitionName=="%s") ]' "${r}"
   f="${r/\//-}" # substitute - for /
-  jq "${q}" assignments.json > "${f}.json"
-  az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${f}.json"))
-  az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${f}.json"))
-  az_ad_groups=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${f}.json"))
+  f="${cache}/role_${subscription_name}_${f}.json"
+  jq "${q}" "${cache}/assignments_subscription.json" > "${f}"
+  az_ad_users=($(jq -r '.[] | select(.principalType=="User") | .principalName' "${f}"))
+  az_ad_sps=($(jq -r '.[] | select(.principalType=="ServicePrincipal") | .principalName' "${f}"))
+  az_ad_groups=($(jq -r '.[] | select(.principalType=="Group") | .principalName' "${f}"))
 
   printf -- "  -\n"
   printf -- "    role: %s\n" ${r}
@@ -69,7 +109,8 @@ for r in "${az_assigned_rolenames[@]}"; do
   for g in ${az_ad_groups[@]}; do
   printf -- "    -\n"
   printf -- "      %s:" ${g}
-  members=($(az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '.[] | .userPrincipalName'))
+  #members=($(az ad group member list -g "${g}" --query '[].{userPrincipalName: userPrincipalName}' | jq -r '.[] | .userPrincipalName'))
+  members=($( jq -r ".[]" "${cache}/ad_group_${g}.json" ))
   if [[ ${#members[@]} = 0 ]]; then
   printf -- " []\n"
   else
