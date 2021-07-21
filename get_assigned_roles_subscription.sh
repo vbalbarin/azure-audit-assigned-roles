@@ -1,4 +1,4 @@
-#! /env/bin/bash
+#!/usr/bin/env bash
 
 function timestamp() {
   printf "%s" "$(date -u +'%Y-%d-%mT%H:%M:%SZ')"
@@ -31,7 +31,7 @@ max_cache_age=1800 #s or 30min
 # max_cache_age=120 #s or 2min
 
 cache_dir="subscription-${subscription_name}-cache-*"
-caches=($(find . -type dir -name "${cache_dir}"  -exec basename {} \;))
+caches=($(find . -type d -name "${cache_dir}"  -exec basename {} \;))
 new_cache_dir="$(pwd)/subscription-${subscription_name}-cache-${now}"
 
 if [[ $(( ${#caches[@]} )) -ne 1 ]]; then
